@@ -7,6 +7,7 @@ import {
   Typography,
   Tooltip,
   Badge,
+  Tag,
   message,
   Popconfirm,
 } from 'antd';
@@ -47,9 +48,10 @@ import './App.css';
 const { Text } = Typography;
 
 const DEFAULT_SETTINGS: AppSettings = {
-  backendUrl: 'http://localhost:5246',
+  backendUrl: 'http://localhost:5023',
   language: 'en',
   isDarkMode: false,
+  useMockMode: true,
 };
 
 const SUGGESTED_PROMPTS = [
@@ -252,7 +254,12 @@ export const App: React.FC = () => {
     setLoading(true);
 
     try {
-      const response = await askQuestion(textToSend, settings.language, settings.backendUrl);
+      const response = await askQuestion(
+        textToSend,
+        settings.language,
+        settings.backendUrl,
+        settings.useMockMode
+      );
 
       setConversations((prev) =>
         prev.map((conv) => {
@@ -456,17 +463,28 @@ export const App: React.FC = () => {
                 <Text strong style={{ fontSize: 16 }}>
                   ResearchHub AI
                 </Text>
-                <Badge
-                  status={isBackendHealthy ? 'success' : isBackendHealthy === false ? 'error' : 'warning'}
-                  text={
-                    isBackendHealthy
-                      ? 'API Connected'
-                      : isBackendHealthy === false
-                      ? 'Backend Offline'
-                      : 'Connecting...'
-                  }
-                  style={{ marginLeft: 8 }}
-                />
+                {settings.useMockMode ? (
+                  <Tag
+                    color="orange"
+                    icon={<ExperimentOutlined />}
+                    style={{ cursor: 'pointer', marginLeft: 8 }}
+                    onClick={() => setSettingsOpen(true)}
+                  >
+                    Local Demo Mode
+                  </Tag>
+                ) : (
+                  <Badge
+                    status={isBackendHealthy ? 'success' : isBackendHealthy === false ? 'error' : 'warning'}
+                    text={
+                      isBackendHealthy
+                        ? 'API Connected'
+                        : isBackendHealthy === false
+                        ? 'Backend Offline'
+                        : 'Connecting...'
+                    }
+                    style={{ marginLeft: 8 }}
+                  />
+                )}
               </Space>
 
               <Space>

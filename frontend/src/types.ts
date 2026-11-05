@@ -36,4 +36,5 @@ export interface AppSettings {
   backendUrl: string;
   language: 'en' | 'ar';
   isDarkMode: boolean;
+  useMockMode: boolean;
 }

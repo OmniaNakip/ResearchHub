@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Modal, Form, Input, Select, Button, Space, message, Tag } from 'antd';
-import { CheckCircleOutlined, CloseCircleOutlined, SyncOutlined } from '@ant-design/icons';
+import { Modal, Form, Input, Select, Button, Space, message, Tag, Switch } from 'antd';
+import { CheckCircleOutlined, CloseCircleOutlined, SyncOutlined, ExperimentOutlined } from '@ant-design/icons';
 import type { AppSettings } from '../types';
 import { checkBackendHealth } from '../services/api';
 
@@ -65,13 +65,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           label="Backend API Base URL"
           name="backendUrl"
           rules={[{ required: true, message: 'Please enter the backend URL' }]}
-          extra="When hosted on GitHub Pages, point this to your public backend URL or local tunnel (e.g. ngrok / cloudflare)."
+          extra="Default ASP.NET local URL is http://localhost:5023 or http://localhost:5246."
         >
-          <Input placeholder="http://localhost:5246" />
+          <Input placeholder="http://localhost:5023" />
         </Form.Item>
 
         <Form.Item label="Connection Status">
-          <Space orientation="horizontal">
+          <Space>
             <Button
               icon={<SyncOutlined spin={testing} />}
               loading={testing}
@@ -90,6 +90,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </Tag>
             )}
           </Space>
+        </Form.Item>
+
+        <Form.Item
+          label={
+            <Space>
+              <ExperimentOutlined style={{ color: '#fa8c16' }} />
+              <span>Local Demo / Mock Mode</span>
+            </Space>
+          }
+          name="useMockMode"
+          valuePropName="checked"
+          extra="Enable to test the UI and citations locally right now without waiting for backend or Gemini API keys."
+        >
+          <Switch checkedChildren="Mock On" unCheckedChildren="Live API" />
         </Form.Item>
 
         <Form.Item label="Preferred Response Language" name="language">
