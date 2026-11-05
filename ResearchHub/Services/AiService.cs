@@ -47,6 +47,7 @@ namespace ResearchHub.Services
             return responseContent;
         }
 
+
         public async Task<string> GetAiResponseAsync(
             string userMessage,
             string language,
@@ -79,59 +80,57 @@ namespace ResearchHub.Services
                     WriteIndented = true
                 });
 
-
             string prompt = $$"""
-    You are an academic research assistant.
+        You are an academic research assistant.
 
-    Answer in {{language}}.
-    Use clear and simple language.
+        Answer in {{language}}.
+        Use clear and simple language.
 
-    Student question:
-    {{userMessage}}
+        Student question:
+        {{userMessage}}
 
-    Retrieved academic papers from OpenAlex:
-    {{papersContext}}
+        Retrieved academic papers from OpenAlex:
+        {{papersContext}}
 
-    Instructions:
-    1. Answer using only the provided research papers.
-    2. Do not invent facts or use external sources.
-    3. If the papers do not provide enough information, mention that.
-    4. Return valid JSON only, without Markdown code fences.
-    5. Create separate claims.
-    6. For each claim, select the IDs of papers that support it.
-    7. Only use Paper IDs that exist in the provided papers.
-    8. Do not generate source passages, paper links, or retrieval scores.
+        Instructions:
+        1. Answer using only the provided research papers.
+        2. Do not invent facts or use external sources.
+        3. If the papers do not provide enough information, mention that.
+        4. Return valid JSON only, without Markdown code fences.
+        5. Create separate claims.
+        6. For each claim, select the IDs of papers that support it.
+        7. Only use Paper IDs that exist in the provided papers.
+        8. Do not generate source passages, paper links, or retrieval scores.
 
-    Required JSON structure:
-    {
-        "answer": "Your complete answer",
-        "claims": [
-            {
-                "text": "A specific claim",
-                "type": "Research finding",
-                "evidence": [
-                    {
-                        "paperId": "Exact ID from the provided papers"
-                    }
-                ]
-            }
-        ]
-    }
-    """;
-
+        Required JSON structure:
+        {
+            "answer": "Your complete answer",
+            "claims": [
+                {
+                    "text": "A specific claim",
+                    "type": "Research finding",
+                    "evidence": [
+                        {
+                            "paperId": "Exact ID from the provided papers"
+                        }
+                    ]
+                }
+            ]
+        }
+        """;
 
             var requestBody = new
             {
                 contents = new[]
                 {
-                    new
-                    {
-                        parts = new[]
-                        {
-                            new { text = prompt }
-                        }
-                    }
-                },
+            new
+            {
+                parts = new[]
+                {
+                    new { text = prompt }
+                }
+            }
+        },
                 generationConfig = new
                 {
                     responseMimeType = "application/json"
@@ -141,28 +140,53 @@ namespace ResearchHub.Services
             string url =
                 $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent";
 
-            using var request = new HttpRequestMessage(
-                HttpMethod.Post,
-                url);
+            string requestJson = JsonSerializer.Serialize(requestBody);
 
-            request.Headers.Add("x-goog-api-key", apiKey);
+            string responseContent = "";
 
-            request.Content = new StringContent(
-                JsonSerializer.Serialize(requestBody),
-                Encoding.UTF8,
-                "application/json");
-
-            using var response = await _httpClient.SendAsync(request);
-
-            string responseContent =
-                await response.Content.ReadAsStringAsync();
-
-            if (!response.IsSuccessStatusCode)
+            // Initial request + 3 retries
+            for (int attempt = 1; attempt <= 4; attempt++)
             {
-                throw new HttpRequestException(
-                    $"Gemini API failed: {(int)response.StatusCode}. {responseContent}",
-                    null,
-                    response.StatusCode);
+                using var request = new HttpRequestMessage(
+                    HttpMethod.Post,
+                    url);
+
+                request.Headers.Add("x-goog-api-key", apiKey);
+
+                request.Content = new StringContent(
+                    requestJson,
+                    Encoding.UTF8,
+                    "application/json");
+
+                using var response = await _httpClient.SendAsync(request);
+
+                responseContent =
+                    await response.Content.ReadAsStringAsync();
+
+                if (response.IsSuccessStatusCode)
+                    break;
+
+                int statusCode = (int)response.StatusCode;
+
+                bool isTemporaryError =
+                    statusCode == 429 ||
+                    statusCode == 500 ||
+                    statusCode == 502 ||
+                    statusCode == 503 ||
+                    statusCode == 504;
+
+                if (!isTemporaryError || attempt == 4)
+                {
+                    throw new HttpRequestException(
+                        $"Gemini API failed: {statusCode}. {responseContent}",
+                        null,
+                        response.StatusCode);
+                }
+
+                // Wait 1, 2, then 4 seconds before retrying
+                int delaySeconds = (int)Math.Pow(2, attempt - 1);
+
+                await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
             }
 
             using var document = JsonDocument.Parse(responseContent);
@@ -185,5 +209,6 @@ namespace ResearchHub.Services
 
             return answer;
         }
+
     }
 }

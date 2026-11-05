@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿
+using System.Text.Json;
 using ResearchHub.Models;
 
 namespace ResearchHub.Services
@@ -6,20 +7,29 @@ namespace ResearchHub.Services
     public class OpenAlexService
     {
         private readonly HttpClient _httpClient;
+        private readonly IConfiguration _configuration;
 
-        public OpenAlexService(HttpClient httpClient)
+        public OpenAlexService(
+            HttpClient httpClient,
+            IConfiguration configuration)
         {
             _httpClient = httpClient;
+            _configuration = configuration;
         }
 
         public async Task<List<ResearchPaper>> SearchPapersAsync(
             string searchQuery)
         {
+            string apiKey = _configuration["OpenAlex:ApiKey"]
+                ?? throw new InvalidOperationException(
+                    "OpenAlex API Key is missing.");
+
             string url =
                 "https://api.openalex.org/works" +
                 $"?search={Uri.EscapeDataString(searchQuery)}" +
                 "&per-page=5" +
-                "&select=id,doi,title,publication_year,authorships,abstract_inverted_index";
+                "&select=id,doi,title,publication_year,authorships,abstract_inverted_index" +
+                $"&api_key={Uri.EscapeDataString(apiKey)}";
 
             using var response = await _httpClient.GetAsync(url);
 
@@ -37,7 +47,6 @@ namespace ResearchHub.Services
             {
                 string id = GetString(item, "id");
                 string doi = GetString(item, "doi");
-
                 string title = GetString(item, "title");
 
                 int? year = null;
