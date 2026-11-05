@@ -1,4 +1,3 @@
-
 using ResearchHub.Services;
 
 namespace ResearchHub
@@ -20,10 +19,22 @@ namespace ResearchHub
             builder.Services.AddSwaggerGen();
             builder.Services.AddHttpClient<OpenAlexService>();
 
+            builder.Services.AddCors(options =>
+            {
+                options.AddDefaultPolicy(policy =>
+                {
+                    policy.AllowAnyOrigin()
+                          .AllowAnyMethod()
+                          .AllowAnyHeader();
+                });
+            });
+
             var app = builder.Build();
 
             app.UseSwagger();
             app.UseSwaggerUI();
+
+            app.UseCors();
 
             app.UseHttpsRedirection();
 
