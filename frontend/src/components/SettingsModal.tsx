@@ -109,7 +109,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <Form.Item label="Preferred Response Language" name="language">
           <Select
             options={[
-              { label: 'English', value: 'en' },
+              { label: 'Automatic (تلقائي بناءً على لغتك)', value: 'auto' },
+              { label: 'English (الإنجليزية)', value: 'en' },
               { label: 'العربية (Arabic)', value: 'ar' },
             ]}
           />

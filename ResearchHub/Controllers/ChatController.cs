@@ -1,7 +1,8 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using ResearchHub.Models;
 using ResearchHub.Services;
 using System.Text.Json;
+using System.Net;
 
 namespace ResearchHub.Controllers
 {
@@ -113,7 +114,24 @@ namespace ResearchHub.Controllers
             catch (HttpRequestException ex)
             {
                 _logger.LogError(ex, "External API request failed.");
-                return StatusCode(502, "An external API request failed.");
+
+                // Explicitly detect 429 Too Many Requests / Resource Exhausted
+                if (ex.StatusCode == HttpStatusCode.TooManyRequests ||
+                    (ex.Message != null && (ex.Message.Contains("429") || ex.Message.Contains("RESOURCE_EXHAUSTED") || ex.Message.Contains("quota"))))
+                {
+                    return StatusCode(429, new
+                    {
+                        error = "RATE_LIMIT_EXCEEDED",
+                        message = "Gemini API rate limit has been exceeded. Please wait a moment before trying again."
+                    });
+                }
+
+                return StatusCode(502, new
+                {
+                    error = "EXTERNAL_API_ERROR",
+                    message = "An external API request failed.",
+                    details = ex.Message
+                });
             }
             catch (JsonException ex)
             {
@@ -166,6 +184,16 @@ namespace ResearchHub.Controllers
             catch (HttpRequestException ex)
             {
                 _logger.LogError(ex, "Failed to retrieve Gemini models.");
+
+                if (ex.StatusCode == HttpStatusCode.TooManyRequests ||
+                    (ex.Message != null && (ex.Message.Contains("429") || ex.Message.Contains("RESOURCE_EXHAUSTED"))))
+                {
+                    return StatusCode(429, new
+                    {
+                        error = "RATE_LIMIT_EXCEEDED",
+                        message = "Gemini API rate limit has been exceeded."
+                    });
+                }
 
                 return StatusCode(502, new
                 {

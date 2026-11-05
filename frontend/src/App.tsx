@@ -8,6 +8,7 @@ import {
   Tooltip,
   Badge,
   Tag,
+  Popover,
   message,
   Popconfirm,
 } from 'antd';
@@ -40,18 +41,22 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 import type { ChatMessage, Conversation, AppSettings } from './types';
-import { askQuestion, checkBackendHealth } from './services/api';
+import { askQuestionStream, checkBackendHealth, RateLimitError } from './services/api';
 import { SettingsModal } from './components/SettingsModal';
 import { EvidenceView } from './components/EvidenceView';
+import { RateLimitCard } from './components/RateLimitCard';
+import { VoiceRecorder } from './components/VoiceRecorder';
+import { ThinkingProcess } from './components/ThinkingProcess';
+import { TokenUsageBar } from './components/TokenUsageBar';
 import './App.css';
 
 const { Text } = Typography;
 
 const DEFAULT_SETTINGS: AppSettings = {
-  backendUrl: 'http://localhost:5023',
-  language: 'en',
+  backendUrl: import.meta.env.VITE_BACKEND_URL || 'http://localhost:5023',
+  language: (import.meta.env.VITE_DEFAULT_LANGUAGE as 'auto' | 'en' | 'ar') || 'auto',
   isDarkMode: false,
-  useMockMode: true,
+  useMockMode: false,
 };
 
 const SUGGESTED_PROMPTS = [
@@ -219,25 +224,33 @@ export const App: React.FC = () => {
     const userMessageId = Date.now().toString();
     const assistantMessageId = (Date.now() + 1).toString();
 
+    const userTokens = Math.max(1, Math.round(textToSend.length / 3.6));
     const userMessage: ChatMessage = {
       id: userMessageId,
       role: 'user',
       content: textToSend,
       timestamp: Date.now(),
+      usage: {
+        promptTokens: userTokens,
+        completionTokens: 0,
+        totalTokens: userTokens,
+      },
     };
 
+    const targetConvId = activeKey;
     const assistantPlaceholder: ChatMessage = {
       id: assistantMessageId,
       role: 'assistant',
       content: '',
       loading: true,
+      isStreaming: true,
       timestamp: Date.now(),
     };
 
     // Update conversation with user query and loading placeholder
     setConversations((prev) =>
       prev.map((conv) => {
-        if (conv.id === activeKey) {
+        if (conv.id === targetConvId) {
           const isFirst = conv.messages.length === 0;
           const newTitle = isFirst ? (textToSend.slice(0, 30) + (textToSend.length > 30 ? '...' : '')) : conv.title;
           return {
@@ -253,27 +266,86 @@ export const App: React.FC = () => {
 
     setLoading(true);
 
+    const currentConv = conversations.find((c) => c.id === targetConvId);
+    const recentHistory = (currentConv?.messages || [])
+      .slice(-5)
+      .map((m) => ({ role: m.role, content: m.content }));
+    const chatSummary = currentConv?.summary;
+
     try {
-      const response = await askQuestion(
+      const response = await askQuestionStream(
         textToSend,
         settings.language,
         settings.backendUrl,
-        settings.useMockMode
+        settings.useMockMode,
+        chatSummary,
+        recentHistory,
+        {
+          onThought: (_chunk, accumulatedThought) => {
+            setConversations((prev) =>
+              prev.map((conv) => {
+                if (conv.id === targetConvId) {
+                  return {
+                    ...conv,
+                    messages: conv.messages.map((m) => {
+                      if (m.id === assistantMessageId) {
+                        return {
+                          ...m,
+                          thought: accumulatedThought,
+                        };
+                      }
+                      return m;
+                    }),
+                  };
+                }
+                return conv;
+              })
+            );
+          },
+          onChunk: (_chunk, accumulated) => {
+            setConversations((prev) =>
+              prev.map((conv) => {
+                if (conv.id === targetConvId) {
+                  return {
+                    ...conv,
+                    messages: conv.messages.map((m) => {
+                      if (m.id === assistantMessageId) {
+                        return {
+                          ...m,
+                          content: accumulated,
+                          loading: false,
+                          isStreaming: true,
+                        };
+                      }
+                      return m;
+                    }),
+                  };
+                }
+                return conv;
+              })
+            );
+          },
+        }
       );
 
       setConversations((prev) =>
         prev.map((conv) => {
-          if (conv.id === activeKey) {
+          if (conv.id === targetConvId) {
             return {
               ...conv,
+              summary: response.updatedSummary || conv.summary,
               updatedAt: Date.now(),
               messages: conv.messages.map((m) => {
                 if (m.id === assistantMessageId) {
                   return {
                     ...m,
                     content: response.answer,
+                    thought: response.thought,
+                    thinkingDuration: response.thinkingDuration,
+                    usage: response.usage,
                     claims: response.claims,
                     loading: false,
+                    isStreaming: false,
                   };
                 }
                 return m;
@@ -285,10 +357,38 @@ export const App: React.FC = () => {
       );
       setIsBackendHealthy(true);
     } catch (err: unknown) {
+      if (err instanceof RateLimitError) {
+        setConversations((prev) =>
+          prev.map((conv) => {
+            if (conv.id === targetConvId) {
+              return {
+                ...conv,
+                updatedAt: Date.now(),
+                messages: conv.messages.map((m) => {
+                  if (m.id === assistantMessageId) {
+                    return {
+                      ...m,
+                      content: '',
+                      isRateLimited: true,
+                      loading: false,
+                      isStreaming: false,
+                      error: err.message,
+                    };
+                  }
+                  return m;
+                }),
+              };
+            }
+            return conv;
+          })
+        );
+        return;
+      }
+
       const errMessage = err instanceof Error ? err.message : 'Unknown error occurred';
       setConversations((prev) =>
         prev.map((conv) => {
-          if (conv.id === activeKey) {
+          if (conv.id === targetConvId) {
             return {
               ...conv,
               updatedAt: Date.now(),
@@ -298,6 +398,7 @@ export const App: React.FC = () => {
                     ...m,
                     content: `⚠️ **Error communicating with backend:**\n\n${errMessage}\n\n*Please ensure the ASP.NET backend is running at \`${settings.backendUrl}\` and CORS is enabled.*`,
                     loading: false,
+                    isStreaming: false,
                     error: errMessage,
                   };
                 }
@@ -488,6 +589,20 @@ export const App: React.FC = () => {
               </Space>
 
               <Space>
+                {currentConversation?.summary && (
+                  <Popover
+                    title="🧠 Rolling Context Summary"
+                    content={
+                      <div style={{ maxWidth: 360, fontSize: '12.5px', lineHeight: 1.55 }}>
+                        {currentConversation.summary}
+                      </div>
+                    }
+                  >
+                    <Tag color="cyan" style={{ cursor: 'pointer', margin: 0 }}>
+                      🧠 Memory Active
+                    </Tag>
+                  </Popover>
+                )}
                 <Tooltip title="Configure API Base URL & Language">
                   <Button
                     size="small"
@@ -562,21 +677,51 @@ export const App: React.FC = () => {
                             </div>
                           )
                         }
-                        loading={msg.loading}
+                        loading={msg.loading && !msg.content && !msg.thought}
                         content={
-                          <div>
-                            <div className="markdown-content">
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                {msg.content}
-                              </ReactMarkdown>
+                          msg.isRateLimited ? (
+                            <RateLimitCard
+                              language={settings.language}
+                              loading={loading}
+                              onRetry={() => {
+                                const lastUserMsg = [...messages]
+                                  .reverse()
+                                  .find((m) => m.role === 'user');
+                                if (lastUserMsg) {
+                                  handleSend(lastUserMsg.content);
+                                }
+                              }}
+                            />
+                          ) : (
+                            <div>
+                              {msg.role === 'assistant' && (
+                                <ThinkingProcess
+                                  thought={msg.thought}
+                                  duration={msg.thinkingDuration}
+                                  thinkingTokens={msg.usage?.thinkingTokens}
+                                  loading={msg.loading && !msg.content}
+                                  language={settings.language}
+                                />
+                              )}
+                              {msg.content && (
+                                <div className="markdown-content">
+                                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                    {msg.content}
+                                  </ReactMarkdown>
+                                  {msg.isStreaming && <span className="streaming-cursor" />}
+                                </div>
+                              )}
+                              {msg.claims && msg.claims.length > 0 && (
+                                <EvidenceView claims={msg.claims} />
+                              )}
+                              {msg.usage && !msg.loading && !msg.isStreaming && (
+                                <TokenUsageBar usage={msg.usage} language={settings.language} />
+                              )}
                             </div>
-                            {msg.claims && msg.claims.length > 0 && (
-                              <EvidenceView claims={msg.claims} />
-                            )}
-                          </div>
+                          )
                         }
                         footer={
-                          msg.role === 'assistant' && !msg.loading && msg.content ? (
+                          msg.role === 'assistant' && !msg.loading && !msg.isStreaming && msg.content && !msg.isRateLimited ? (
                             <Space size={4} style={{ marginTop: 6 }}>
                               <Tooltip title="Copy Answer">
                                 <Button
@@ -626,7 +771,20 @@ export const App: React.FC = () => {
                   value={inputText}
                   onChange={(val) => setInputText(val)}
                   onSubmit={() => handleSend()}
-                  placeholder="Ask a scientific research question (e.g., 'Summarize recent findings on mRNA vaccines')..."
+                  prefix={
+                    <VoiceRecorder
+                      language={settings.language}
+                      disabled={loading}
+                      onTranscript={(transcript) => {
+                        setInputText((prev) => (prev ? `${prev} ${transcript}` : transcript));
+                      }}
+                    />
+                  }
+                  placeholder={
+                    settings.language === 'ar'
+                      ? 'اسأل أي سؤال علمي أو اضغط على الميكروفون للتحدث بصوتك...'
+                      : "Ask a research question or click microphone to speak..."
+                  }
                 />
                 <div className="chat-disclaimer">
                   ResearchHub searches OpenAlex academic papers and Gemini AI. Citations are linked directly to peer-reviewed sources.
