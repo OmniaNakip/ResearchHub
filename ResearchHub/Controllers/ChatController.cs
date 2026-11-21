@@ -44,6 +44,7 @@ namespace ResearchHub.Controllers
 
 
         [HttpPost("ask")]
+
         public async Task<IActionResult> Ask([FromBody] ChatRequest request)
         {
             try
@@ -63,10 +64,19 @@ namespace ResearchHub.Controllers
                     request.Language = "English";
                 }
 
-                // 2. Retrieve academic papers from OpenAlex
-                List<ResearchPaper> papers =
-                    await _openAlexService.SearchPapersAsync(
+                // 2. Translate Arabic research questions into English
+                // before searching OpenAlex
+                string searchQuery = request.UserMessage;
+
+                if (ContainsArabic(request.UserMessage))
+                {
+                    searchQuery = await _aiService.GetEnglishSearchQueryAsync(
                         request.UserMessage);
+                }
+
+                // 3. Retrieve academic papers from OpenAlex
+                List<ResearchPaper> papers =
+                    await _openAlexService.SearchPapersAsync(searchQuery);
 
                 if (papers == null || papers.Count == 0)
                 {
@@ -77,7 +87,7 @@ namespace ResearchHub.Controllers
                     });
                 }
 
-                // 3. Check whether abstracts are available
+                // 4. Check whether abstracts are available
                 if (papers.All(p =>
                     string.IsNullOrWhiteSpace(p.Abstract)))
                 {
@@ -88,13 +98,14 @@ namespace ResearchHub.Controllers
                     });
                 }
 
-                // 4. Generate AI response using Gemini
+                // 5. Generate AI response using Gemini
+                // Keep the original research question here
                 string aiResponse = await _aiService.GetAiResponseAsync(
                     request.UserMessage,
                     request.Language,
                     papers);
 
-                // 5. Parse Gemini JSON response
+                // 6. Parse Gemini JSON response
                 AiGeneratedResponse? generatedResponse =
                     JsonSerializer.Deserialize<AiGeneratedResponse>(
                         aiResponse,
@@ -112,7 +123,7 @@ namespace ResearchHub.Controllers
                     });
                 }
 
-                // 6. Handle questions outside academic research scope
+                // 7. Handle questions outside academic research scope
                 if (!generatedResponse.IsInScope)
                 {
                     return Ok(new ChatResponse
@@ -122,7 +133,7 @@ namespace ResearchHub.Controllers
                     });
                 }
 
-                // 7. Convert AI claims into response claims
+                // 8. Convert AI claims into response claims
                 var validatedResponse = new ChatResponse
                 {
                     Answer = generatedResponse.Answer,
@@ -144,10 +155,10 @@ namespace ResearchHub.Controllers
                         .ToList()
                 };
 
-                // 8. Validate claim types and enrich evidence
+                // 9. Validate claim types and enrich evidence
                 ValidateAndEnrichClaims(validatedResponse, papers);
 
-                // 9. Return the final response
+                // 10. Return the final response
                 return Ok(new ChatResponse
                 {
                     Answer = validatedResponse.Answer,
@@ -191,6 +202,7 @@ namespace ResearchHub.Controllers
                 });
             }
         }
+
 
 
 
@@ -356,9 +368,19 @@ namespace ResearchHub.Controllers
                         });
                     }
 
-                    discoveredPapers =
-                        await _openAlexService.SearchPapersAsync(
+                    // Translate Arabic research questions into English
+                    // before searching OpenAlex.
+                    string searchQuery = request.ResearchQuestion;
+
+                    if (ContainsArabic(request.ResearchQuestion))
+                    {
+                        searchQuery = await _aiService.GetEnglishSearchQueryAsync(
                             request.ResearchQuestion);
+                    }
+
+                    // Search OpenAlex using the prepared search query.
+                    discoveredPapers =
+                        await _openAlexService.SearchPapersAsync(searchQuery);
 
                     if (discoveredPapers == null || discoveredPapers.Count == 0)
                     {
@@ -907,6 +929,15 @@ namespace ResearchHub.Controllers
 
 
 
+
+
+        private static bool ContainsArabic(string text)
+        {
+            return text.Any(c =>
+                (c >= '\u0600' && c <= '\u06FF') ||
+                (c >= '\u0750' && c <= '\u077F') ||
+                (c >= '\u08A0' && c <= '\u08FF'));
+        }
 
 
 

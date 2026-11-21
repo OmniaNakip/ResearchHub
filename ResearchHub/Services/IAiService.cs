@@ -1,4 +1,5 @@
-﻿using ResearchHub.Models;
+﻿
+using ResearchHub.Models;
 
 namespace ResearchHub.Services
 {
@@ -8,6 +9,9 @@ namespace ResearchHub.Services
             string userMessage,
             string language,
             List<ResearchPaper> papers);
+
+        Task<string> GetEnglishSearchQueryAsync(
+            string userMessage);
 
         Task<string> GetAvailableModelsAsync();
     }

@@ -50,6 +50,147 @@ namespace ResearchHub.Services
             return responseContent;
         }
 
+
+
+        public async Task<string> GetEnglishSearchQueryAsync(string userMessage)
+        {
+            string? apiKey = _configuration["Gemini:ApiKey"];
+            string? model = _configuration["Gemini:Model"];
+
+            if (string.IsNullOrWhiteSpace(apiKey))
+                throw new InvalidOperationException(
+                    "Gemini API Key is not configured.");
+
+            if (string.IsNullOrWhiteSpace(model))
+                throw new InvalidOperationException(
+                    "Gemini model is not configured.");
+
+            string prompt = $$"""
+You are an academic search query translator.
+
+Convert the following research question into a concise English
+academic search query suitable for searching OpenAlex.
+
+Rules:
+1. Translate Arabic or other non-English text into English.
+2. Preserve the original scientific meaning.
+3. Keep important technical terms, diseases, methods, and technologies.
+4. Use relevant academic keywords and synonyms when useful.
+5. Do not answer the research question.
+6. Do not add explanations or introductions.
+7. Return ONLY the English search query.
+
+Research question:
+{{userMessage}}
+""";
+
+            var requestBody = new
+            {
+                contents = new[]
+                {
+            new
+            {
+                parts = new[]
+                {
+                    new { text = prompt }
+                }
+            }
+        },
+                generationConfig = new
+                {
+                    temperature = 0.1
+                }
+            };
+
+            string url =
+                $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent";
+
+            string requestJson = JsonSerializer.Serialize(requestBody);
+
+            string responseContent = string.Empty;
+
+            for (int attempt = 1; attempt <= 4; attempt++)
+            {
+                using var request = new HttpRequestMessage(
+                    HttpMethod.Post,
+                    url);
+
+                request.Headers.Add("x-goog-api-key", apiKey);
+
+                request.Content = new StringContent(
+                    requestJson,
+                    Encoding.UTF8,
+                    "application/json");
+
+                using var response = await _httpClient.SendAsync(request);
+
+                responseContent = await response.Content.ReadAsStringAsync();
+
+                if (response.IsSuccessStatusCode)
+                    break;
+
+                int statusCode = (int)response.StatusCode;
+
+                bool isTemporaryError =
+                    statusCode == 429 ||
+                    statusCode == 500 ||
+                    statusCode == 502 ||
+                    statusCode == 503 ||
+                    statusCode == 504;
+
+                if (!isTemporaryError || attempt == 4)
+                {
+                    throw new HttpRequestException(
+                        $"Gemini search translation failed: {statusCode}. {responseContent}",
+                        null,
+                        response.StatusCode);
+                }
+
+                await Task.Delay(
+                    TimeSpan.FromSeconds(Math.Pow(2, attempt - 1)));
+            }
+
+            using var document = JsonDocument.Parse(responseContent);
+
+            if (!document.RootElement.TryGetProperty(
+                    "candidates", out var candidates) ||
+                candidates.ValueKind != JsonValueKind.Array ||
+                candidates.GetArrayLength() == 0)
+            {
+                throw new InvalidOperationException(
+                    "Gemini returned no search query.");
+            }
+
+            var firstCandidate = candidates[0];
+
+            if (!firstCandidate.TryGetProperty(
+                    "content", out var content) ||
+                !content.TryGetProperty(
+                    "parts", out var parts) ||
+                parts.ValueKind != JsonValueKind.Array ||
+                parts.GetArrayLength() == 0 ||
+                !parts[0].TryGetProperty(
+                    "text", out var textElement))
+            {
+                throw new InvalidOperationException(
+                    "Gemini returned an invalid search query response.");
+            }
+
+            string? searchQuery = textElement.GetString();
+
+            if (string.IsNullOrWhiteSpace(searchQuery))
+            {
+                throw new InvalidOperationException(
+                    "Gemini returned an empty search query.");
+            }
+
+            return searchQuery
+                .Replace("```text", "")
+                .Replace("```", "")
+                .Trim()
+                .Trim('"');
+        }
+
         public async Task<string> GetAiResponseAsync(
             string userMessage,
             string language,
