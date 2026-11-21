@@ -361,3 +361,21 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# API keys and secrets
+**/secrets.json
+.env
+.env.*
+!.env.example
+
+# Local configuration
+**/appsettings.*.local.json
+
+# Certificates and private keys
+*.pfx
+*.p12
+*.key
+*.pem
+
+# User Secrets / local development files
+secrets/
