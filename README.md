@@ -70,16 +70,17 @@ Available workflow actions: `Start`, `Back`, `Discover`, `Analyze`, `Compare`, `
 
 The chatbot organizes generated research responses into structured claims and associates each claim with supporting paper references, so users can inspect the academic sources behind the generated explanations.
 
-## 3. Human-AI Interaction (HAI)
+## 3. Human-AI Interaction (HAI): Transparency
 
-Research Hub follows a Human-AI Interaction approach that aims to keep the user involved and informed throughout the research process.
+Research Hub's Human-AI Interaction design centers on a single guiding principle, **Transparency** — keeping the user clearly informed, at every step, about what the AI is doing, what it knows, and what it does not. This is expressed through five concrete facets:
 
-| Principle | What it means here |
+| Facet | What it means in Research Hub |
 |---|---|
-| **Transparency** | Every generated claim is linked to the academic papers that support it. |
-| **User Control** | Users drive the research process through explicit workflow actions. |
-| **Explainability** | Responses are structured into claims and evidence, making sources easy to inspect. |
-| **Responsible Use** | AI-generated content should be verified against the original publications, not treated as unquestionable fact. |
+| **Capability Disclosure** | The welcome message and the `/api/Chat/models` endpoint tell the user upfront what the assistant can do and which AI model is answering. |
+| **Source Attribution** | Every generated claim is linked to the specific academic paper (title, authors, DOI) it came from, so the user can trace it back. |
+| **Limitation Disclosure** | Responses carry explicit markers — such as a citation-check status, or an honest note when retrieved papers don't fully match the question — rather than papering over a gap. |
+| **Scope Disclosure** | Questions outside the academic research scope receive a clear message saying so, instead of a fabricated or off-topic answer. |
+| **Process Visibility** | The guided research workflow always reports the current stage, the next stage, and the available actions, so the user always knows where they are. |
 
 ## 4. Welcome Message and Fallback Handling
 
@@ -317,7 +318,7 @@ Website: https://ai.google.dev/
 
 ## 13. Project Focus
 
-Research Hub aims to make academic exploration more accessible while emphasizing transparency and responsible AI usage. By combining academic paper retrieval with structured AI-generated responses, the system helps students explore research topics and inspect the sources behind generated claims.
+Research Hub aims to make academic exploration more accessible while keeping transparency at the center of the experience. By combining academic paper retrieval with structured, source-attributed AI responses, the system helps students explore research topics and inspect the sources behind every generated claim.
 
 ## 14. Disclaimer
 
