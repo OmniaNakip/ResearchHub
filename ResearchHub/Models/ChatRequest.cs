@@ -11,5 +11,16 @@ namespace ResearchHub.Models
 
         [Required]
         public string Language { get; set; } = "English";
+
+        // HAI workflow information
+        public string CurrentStage { get; set; } = "ResearchQuestion";
+
+        public string Action { get; set; } = "Ask";
+
+        public string ResearchQuestion { get; set; } = string.Empty;
+
+        public List<string> SelectedPaperIds { get; set; } = new();
+
+        public bool? StudentApproval { get; set; }
     }
 }
